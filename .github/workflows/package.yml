@@ -40,7 +40,7 @@ jobs:
       # `npm pack` 仅打包 package.json 的 `files` 字段列出的产物
       # （lib/、README.md、README.en.md、cordis.patch.yml），即发布用的插件包。
       - name: Pack plugin
-        run: npm pack --pack-destination=dist
+        run: mkdir -p dist && npm pack --pack-destination=dist
 
       - name: List package contents
         run: |
