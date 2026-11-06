@@ -22,6 +22,8 @@
  * 1~6 分钟，绝不能同步阻塞一次远程调用。
  */
 
+import { SAFE_REDIRECT, fetchWithSafeRedirect } from "./netguard.js";
+
 export type MiniMaxProtocol = "v1" | "v2";
 
 /** 归一化后的任务状态；原始状态字符串另存 remoteStatus 供界面显示。 */
@@ -262,7 +264,7 @@ async function requestJson(url: string, init: RequestInit, timeoutMs: number, wh
   const timeout = AbortSignal.timeout(Math.max(10000, timeoutMs));
   let response: Response;
   try {
-    response = await fetch(url, { ...init, signal: timeout });
+    response = await fetch(url, { ...init, signal: timeout, redirect: SAFE_REDIRECT });
   } catch (error) {
     if (timeout.aborted) throw new MiniMaxError(`${what}超时（${Math.round(timeoutMs / 1000)} 秒）`);
     throw new MiniMaxError(`无法连接 MiniMax：${error instanceof Error ? error.message : String(error)}`);
@@ -473,7 +475,8 @@ export async function retrieveFile(input: MiniMaxRequest & { fileId: string }): 
 /** 把视频下载到本地。 */
 export async function downloadVideo(url: string, timeoutMs: number, headers?: Record<string, string>): Promise<Buffer> {
   const timeout = AbortSignal.timeout(Math.max(30000, timeoutMs));
-  const response = await fetch(url, { signal: timeout, headers });
+  // 下载不带凭据，但逐跳校验 http(s) 与公网主机，挡掉被篡改响应引来的 SSRF。
+  const response = await fetchWithSafeRedirect(url, { signal: timeout, headers });
   if (!response.ok) throw new MiniMaxError(`下载视频失败（HTTP ${response.status}）`);
   return Buffer.from(await response.arrayBuffer());
 }

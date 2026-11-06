@@ -21,6 +21,7 @@
 
 import { randomUUID } from "node:crypto";
 import { sniffBinary } from "./musicapi.js";
+import { SAFE_REDIRECT, assertSafeUrl, fetchWithSafeRedirect } from "./netguard.js";
 
 /** 当前唯一支持的生成式音频模型。 */
 export const SFX_DEFAULT_MODEL = "seed-audio-1.0";
@@ -299,13 +300,13 @@ async function downloadAudio(url: string, timeoutMs: number, signal?: AbortSigna
   } catch {
     throw new SfxApiError(`返回的音频 URL 不合法：${url.slice(0, 200)}`);
   }
-  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-    throw new SfxApiError(`只接受 http(s) 音频 URL：${parsed.protocol}`);
-  }
+  // 只允许 http(s) 且拒绝私有 / 内网主机，挡掉被篡改响应引来的 SSRF。
+  assertSafeUrl(parsed, { allowHttp: true });
   const { signal: composed } = combinedSignal(timeoutMs, signal);
   let response: Response;
   try {
-    response = await fetch(parsed.toString(), { signal: composed });
+    // 下载不带凭据，但逐跳校验 http(s) 与公网主机。
+    response = await fetchWithSafeRedirect(parsed.toString(), { signal: composed });
   } catch (error) {
     if (composed.aborted) throw new SfxApiError("下载音频超时或被取消");
     throw new SfxApiError(`下载音频失败：${error instanceof Error ? error.message : String(error)}`);
@@ -383,7 +384,9 @@ export async function generateSfx(
           "X-Api-Request-Id": randomUUID()
         },
         body: JSON.stringify(body),
-        signal: composed
+        signal: composed,
+        // 带 X-Api-Key 的请求禁止跟随重定向，避免密钥被转发到重定向目标。
+        redirect: SAFE_REDIRECT
       });
       break;
     } catch (error) {
