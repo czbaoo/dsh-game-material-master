@@ -22,10 +22,10 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
-          cache: "npm"
+          node-version: "22"
 
-      # 仓库未提交 lockfile，用 `npm install` 解析依赖。
+      # 仓库未提交 lockfile（.gitignore 有意忽略所有锁文件，避免不同包管理器各带一份），
+      # 故不使用 setup-node 的缓存；用 `npm install` 解析依赖。
       # devDependencies 含 @deepseek-ai/cordis 等，typecheck/构建都需要它们。
       - name: Install dependencies
         run: npm install --no-audit --no-fund
