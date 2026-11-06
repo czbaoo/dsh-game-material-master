@@ -41,6 +41,7 @@ import {
   type MusicEngine,
   type MusicMode
 } from "./musicmodels.js";
+import { SAFE_REDIRECT, fetchWithSafeRedirect } from "./netguard.js";
 
 export interface MusicApiConfig {
   baseUrl: string;
@@ -170,7 +171,9 @@ async function requestJson(
         ...(init.body === undefined ? {} : { "Content-Type": "application/json" })
       },
       ...(init.body === undefined ? {} : { body: JSON.stringify(init.body) }),
-      signal: timeout
+      signal: timeout,
+      // 带 Bearer 的请求绝不跟随重定向，防止密钥被转发到重定向目标（SSRF 式泄露）。
+      redirect: SAFE_REDIRECT
     });
   } catch (error) {
     if (timeout.aborted) throw new MusicApiError(`谱乐 AI 请求超时（${Math.round((config.timeoutMs || 120000) / 1000)} 秒）`);
@@ -529,7 +532,9 @@ export async function uploadSunoAudio(config: MusicApiConfig, input: SunoAudioUp
       method: "POST",
       headers: authHeaders(config),
       body: form,
-      signal: timeout
+      signal: timeout,
+      // 上传也带 Bearer：同样禁止跟随重定向，避免密钥外泄。
+      redirect: SAFE_REDIRECT
     });
   } catch (error) {
     if (timeout.aborted) throw new MusicApiError(`上传参考音频超时（${Math.round((config.timeoutMs || 120000) / 1000)} 秒）`);
@@ -945,7 +950,8 @@ export async function downloadToFile(
   const timeout = AbortSignal.timeout(Math.max(30000, options.timeoutMs ?? 180000));
   let response: Response;
   try {
-    response = await fetch(url.toString(), { signal: timeout });
+    // 下载不带凭据，但仍逐跳校验 http(s) 与公网主机，挡掉被篡改响应引来的 SSRF。
+    response = await fetchWithSafeRedirect(url.toString(), { signal: timeout });
   } catch (error) {
     if (timeout.aborted) throw new MusicApiError(`下载音频超时：${url.hostname}`);
     throw new MusicApiError(`下载音频失败：${error instanceof Error ? error.message : String(error)}`);

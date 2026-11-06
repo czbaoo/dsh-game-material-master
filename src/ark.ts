@@ -6,6 +6,8 @@
  * 返回的 URL 只有 24 小时有效期，所以拿到就立刻下载落盘。
  */
 
+import { SAFE_REDIRECT, fetchWithSafeRedirect } from "./netguard.js";
+
 export interface ArkRequest {
   baseUrl: string;
   apiKey: string;
@@ -96,7 +98,9 @@ export async function generateImage(request: ArkRequest, signal?: AbortSignal): 
         "Content-Type": "application/json"
       },
       body: JSON.stringify(body),
-      signal: composed
+      signal: composed,
+      // 带 Bearer 的请求禁止跟随重定向，避免密钥被转发到重定向目标。
+      redirect: SAFE_REDIRECT
     });
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
@@ -122,7 +126,8 @@ export async function generateImage(request: ArkRequest, signal?: AbortSignal): 
   }
 
   if (typeof item.url === "string" && item.url !== "") {
-    const download = await fetch(item.url, { signal: composed }).catch((error: unknown) => {
+    // 下载不带凭据，但逐跳校验 http(s) 与公网主机，挡掉被篡改响应引来的 SSRF。
+    const download = await fetchWithSafeRedirect(item.url, { signal: composed }).catch((error: unknown) => {
       throw new ArkError(`下载生成结果失败：${error instanceof Error ? error.message : String(error)}`);
     });
     if (!download.ok) {

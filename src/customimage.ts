@@ -15,6 +15,7 @@
 
 import { sniffExt } from "./ark.js";
 import { CUSTOM_PROTOCOL_DEFAULTS, type CustomProtocol } from "./config.js";
+import { SAFE_REDIRECT } from "./netguard.js";
 
 export interface CustomImageRequest {
   protocol: CustomProtocol;
@@ -116,7 +117,9 @@ function networkError(context: SignalContext, error: unknown): CustomImageError 
 
 async function fetchOrThrow(url: string, init: RequestInit, context: SignalContext): Promise<Response> {
   try {
-    return await fetch(url, { ...init, signal: context.composed });
+    // 这些请求都带用户凭据（Authorization / Cookie）；禁止跟随重定向，
+    // 避免凭据被转发到（被篡改的）重定向目标。ComfyUI 等本地端点的 API 调用本就不该重定向。
+    return await fetch(url, { ...init, signal: context.composed, redirect: SAFE_REDIRECT });
   } catch (error) {
     throw networkError(context, error);
   }

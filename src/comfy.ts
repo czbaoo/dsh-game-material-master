@@ -11,6 +11,7 @@
  */
 
 import { randomUUID } from "node:crypto";
+import { SAFE_REDIRECT } from "./netguard.js";
 
 export interface ComfyRequest {
   /** 例如 http://127.0.0.1:8188 */
@@ -634,7 +635,8 @@ async function comfyFetch(request: ComfyRequest, path: string, init?: RequestIni
   const headers = new Headers(init?.headers ?? undefined);
   if (cookies !== "") headers.set("Cookie", cookies);
   try {
-    return await fetch(base + path, { ...(init ?? {}), headers, signal: timeout });
+    // 带 Cookie（反代会话）的请求禁止跟随重定向，避免会话被转发到重定向目标。
+    return await fetch(base + path, { ...(init ?? {}), headers, signal: timeout, redirect: SAFE_REDIRECT });
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
     if (timeout.aborted === true) throw new ComfyError("本地 ComfyUI 请求超时（" + Math.round(timeoutMs / 1000) + " 秒）：" + path);

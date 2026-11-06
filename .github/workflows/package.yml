@@ -1,0 +1,66 @@
+name: Package Plugin
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    name: Build and package
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      # 仓库未提交 lockfile（.gitignore 有意忽略所有锁文件，避免不同包管理器各带一份），
+      # 故不使用 setup-node 的缓存；用 `npm install` 解析依赖。
+      # devDependencies 含 @deepseek-ai/cordis 等，typecheck/构建都需要它们。
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      # 类型检查 + 构建（tsc 编译 src/ → lib/，并执行 strip-client-export 后处理）。
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+      # `npm pack` 仅打包 package.json 的 `files` 字段列出的产物
+      # （lib/、README.md、README.en.md、cordis.patch.yml），即发布用的插件包。
+      - name: Pack plugin
+        run: mkdir -p dist && npm pack --pack-destination=dist
+
+      - name: List package contents
+        run: |
+          ls -lh dist
+          tar -tzf dist/*.tgz | head -50
+
+      - name: Upload plugin artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dsh-game-material-master-${{ github.sha }}
+          path: dist/*.tgz
+          if-no-files-found: error
+
+      # 仅在推送版本 tag（v*）时发布 GitHub Release，并把插件包作为资产上传。
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" dist/*.tgz \
+            --title "${GITHUB_REF_NAME}" \
+            --generate-notes \
+            --repo "${{ github.repository }}"
